@@ -5,7 +5,7 @@ import numpy as np
 
 def flip_flop_state_preparation(X: np.ndarray):
     """
-    Prepares a quantum circuit for the flip-flop state based on the input data.
+    Implement the quantum circuit of the flip-flop quantum state preparation.
 
     Args:
         X (np.ndarray): Input data as a numpy array.
