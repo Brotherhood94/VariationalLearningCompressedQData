@@ -20,6 +20,7 @@ import json
 import qiskit.qasm2
 import os
 import warnings
+from flip_flop_state_preparation import flip_flop_state_preparation
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 warnings.filterwarnings('ignore')
 
@@ -29,11 +30,26 @@ WAND_PROJECT_NAME = 'tests_variational_learning_compressed_qdata'
 
 
 def init_wandb(noisy, n_records, n_features, circuit_width, n_layers, su2_gates, max_epochs, learning_method, init_parameters, num_parameters, num_extending_qubits, optimization_level, seed):
-    wandb.init(
-        # set the wandb project where this run will be logged
-        project=WAND_PROJECT_NAME,
+    """
+    Initialize Weights and Biases (wandb) for logging hyperparameters and run metadata.
 
-        # track hyperparameters and run metadata
+    Args:
+        noisy (bool): Flag indicating whether the simulation is noisy or not.
+        n_records (int): Number of records in the dataset.
+        n_features (int): Number of features in the dataset.
+        circuit_width (int): Width of the quantum circuit.
+        n_layers (int): Number of layers in the quantum circuit.
+        su2_gates (int): Number of SU(2) gates in the quantum circuit.
+        max_epochs (int): Maximum number of epochs for training.
+        learning_method (str): Optimization method for training.
+        init_parameters (numpy.ndarray): Initial parameters for the ansatz.
+        num_parameters (int): Number of parameters in the ansatz.
+        num_extending_qubits (int): Number of extending qubits in the ansatz.
+        optimization_level (int): Optimization level for transpiling the circuit.
+        seed (int): Random seed for reproducibility.
+    """
+    wandb.init(
+        project=WAND_PROJECT_NAME,
         config={
             "learning_method": learning_method,
             "max_epochs": max_epochs,
@@ -52,54 +68,54 @@ def init_wandb(noisy, n_records, n_features, circuit_width, n_layers, su2_gates,
     )
 
 
-def flip_flop_state_preparation(X: np.ndarray):
-    n_records, n_features = X.shape
-    n_qubits_per_records = int(np.ceil(np.log2(n_records)))
-    if n_features > 1:
-        n_qubits_per_feature = int(np.ceil(np.log2(n_features)))
-    qindex_records = QuantumRegister(n_qubits_per_records, 'm')
-    if n_features > 1:
-        qindex_features = QuantumRegister(n_qubits_per_feature, 'n')
-    qdata = QuantumRegister(1, 'd')
-    if n_features > 1:
-        ff_circuit = QuantumCircuit(qindex_records, qindex_features, qdata)
-    else:
-        ff_circuit = QuantumCircuit(qindex_records, qdata)
-    ff_circuit.h(qindex_records)
-    if n_features > 1:
-        ff_circuit.h(qindex_features)
-    for index_record, record in enumerate(X):
-        for index_feature, feature in enumerate(record):
-            bin_index_record = "{0:b}".format(
-                index_record).zfill(n_qubits_per_records)
-            if n_features > 1:
-                bin_index_feature = "{0:b}".format(
-                    index_feature).zfill(n_qubits_per_feature)
-                ctrl_state = bin_index_feature + bin_index_record
-                CRYGate = RYGate(2*np.arcsin(feature)).control(len(qindex_records) +
-                                                               len(qindex_features), ctrl_state=ctrl_state)
-                ff_circuit.append(
-                    CRYGate, qindex_records[:] + qindex_features[:] + qdata[:])
-            else:
-                ctrl_state = bin_index_record
-                CRYGate = RYGate(
-                    2*np.arcsin(feature)).control(len(qindex_records), ctrl_state=ctrl_state)
-                ff_circuit.append(
-                    CRYGate, qindex_records[:] + qdata[:])
-    return ff_circuit
-
-
 def get_ansatz(su2_gates, n_layers, num_extending_qubits, abstract_circuit):
+    """
+    Get the ansatz circuit for variational learning.
+
+    Args:
+        su2_gates (int): Number of SU(2) gates in the ansatz.
+        n_layers (int): Number of layers in the ansatz.
+        num_extending_qubits (int): Number of extending qubits in the ansatz.
+        abstract_circuit (QuantumCircuit): The abstract circuit for state preparation.
+
+    Returns:
+        QuantumCircuit: The ansatz circuit.
+    """
     ansatz = EfficientSU2(abstract_circuit.num_qubits + num_extending_qubits,
                           su2_gates=su2_gates, reps=n_layers)
     return ansatz
 
 
 def get_circuit_stats(circuit):
+    """
+    Get statistics of a quantum circuit.
+
+    Args:
+        circuit (QuantumCircuit): The quantum circuit.
+
+    Returns:
+        int: Depth of the circuit.
+        int: Size of the circuit.
+        dict: Count of each operation in the circuit.
+        DAGCircuit: Directed Acyclic Graph representation of the circuit.
+    """
     return circuit.depth(), circuit.size(), circuit.count_ops(), circuit_to_dag(circuit)
 
 
 def run_backend(circuit, model_instance, method='density_matrix', optimization_level=0):
+    """
+    Run a quantum circuit on a backend.
+
+    Args:
+        circuit (QuantumCircuit): The quantum circuit to run.
+        model_instance (BaseBackend): The backend instance.
+        method (str, optional): Method for simulation. Defaults to 'density_matrix'.
+        optimization_level (int, optional): Optimization level for transpiling the circuit. Defaults to 0.
+
+    Returns:
+        numpy.ndarray: Density matrix of the final state.
+        QuantumCircuit: Transpiled circuit.
+    """
     circuit.save_density_matrix()
     noise_model = NoiseModel.from_backend(model_instance)
     coupling_map = model_instance.configuration().coupling_map
@@ -117,13 +133,27 @@ def run_backend(circuit, model_instance, method='density_matrix', optimization_l
 
 
 def compute_loss(paramaters, abstract_circuit, ansatz, num_extending_qubits, noisy_instance, fault_tolerant_instance, noisy):
+    """
+    Compute the loss function for variational learning.
+
+    Args:
+        paramaters (numpy.ndarray): Parameters for the ansatz.
+        abstract_circuit (QuantumCircuit): The abstract circuit for state preparation.
+        ansatz (QuantumCircuit): The ansatz circuit.
+        num_extending_qubits (int): Number of extending qubits in the ansatz. (NOT USED)
+        noisy_instance (BaseBackend): The noisy backend instance.
+        fault_tolerant_instance (BaseBackend): The fault-tolerant backend instance.
+        noisy (bool): Flag indicating whether the simulation is noisy or not.
+
+    Returns:
+        float: The computed loss value.
+    """
     binded_ansatz = ansatz.assign_parameters(paramaters)
     density_matrix_ansatz, _ = run_backend(binded_ansatz.copy(), noisy_instance) if noisy else run_backend(
         binded_ansatz.copy(), fault_tolerant_instance)
 
     initialized_adjoint_circuit = QuantumCircuit(binded_ansatz.num_qubits)
     initialized_adjoint_circuit.set_density_matrix(density_matrix_ansatz)
-    # not using extending qubits
     initialized_adjoint_circuit.append(
         abstract_circuit.inverse(), initialized_adjoint_circuit.qubits[:])
 
@@ -144,6 +174,25 @@ def compute_loss(paramaters, abstract_circuit, ansatz, num_extending_qubits, noi
 
 
 def train_ansatz(init_parameters, abstract_circuit, ansatz, num_extending_qubits, noisy_instance, fault_tolerant_instance, learning_method, max_epochs, noisy):
+    """
+    Train the ansatz circuit using variational learning.
+
+    Args:
+        init_parameters (numpy.ndarray): Initial parameters for the ansatz.
+        abstract_circuit (QuantumCircuit): The abstract circuit for state preparation.
+        ansatz (QuantumCircuit): The ansatz circuit.
+        num_extending_qubits (int): Number of extending qubits in the ansatz.
+        noisy_instance (BaseBackend): The noisy backend instance.
+        fault_tolerant_instance (BaseBackend): The fault-tolerant backend instance.
+        learning_method (str): Optimization method for training.
+        max_epochs (int): Maximum number of epochs for training.
+        noisy (bool): Flag indicating whether the simulation is noisy or not.
+
+    Returns:
+        QuantumCircuit: The trained ansatz circuit.
+        numpy.ndarray: The best parameters found during training.
+        float: The final infidelity value.
+    """
     out = minimize(compute_loss,
                    x0=init_parameters,
                    method=learning_method,
@@ -155,11 +204,28 @@ def train_ansatz(init_parameters, abstract_circuit, ansatz, num_extending_qubits
     best_parameters = out.x
     final_infidelity = out.fun
     print('Final infidelity: '+str(final_infidelity))
-    # final_num_of_epochs = out.nita # not available in COBYLA
     return ansatz.assign_parameters(best_parameters), best_parameters, final_infidelity
 
 
-def run_test(n_records, n_features, n_layers, su2_gates, num_extending_qubits, max_epochs, noisy_instance, fault_tolerant_instance, learning_method, optimization_level, noisy, seed, folder):
+def run_test(state_preparation, n_records, n_features, n_layers, su2_gates, num_extending_qubits, max_epochs, noisy_instance, fault_tolerant_instance, learning_method, optimization_level, noisy, seed, folder):
+    """
+    Run a test for variational learning.
+
+    Args:
+        n_records (int): Number of records in the dataset.
+        n_features (int): Number of features in the dataset.
+        n_layers (int): Number of layers in the ansatz.
+        su2_gates (int): Number of SU(2) gates in the ansatz.
+        num_extending_qubits (int): Number of extending qubits in the ansatz.
+        max_epochs (int): Maximum number of epochs for training.
+        noisy_instance (BaseBackend): The noisy backend instance.
+        fault_tolerant_instance (BaseBackend): The fault-tolerant backend instance.
+        learning_method (str): Optimization method for training.
+        optimization_level (int): Optimization level for transpiling the circuit.
+        noisy (bool): Flag indicating whether the simulation is noisy or not.
+        seed (int): Random seed for reproducibility.
+        folder (str): Folder path for saving the results.
+    """
     print('Running: '+str(n_records)+'_'+str(n_features)+'_' +
           str(n_layers)+'_'+str(su2_gates)+'_'+str(num_extending_qubits)+'_'+str(seed)+'_'+str(noisy_instance.backend_name))
 
@@ -177,8 +243,10 @@ def run_test(n_records, n_features, n_layers, su2_gates, num_extending_qubits, m
         n_samples=n_records, n_features=n_features, n_informative=n_features, n_redundant=0, n_classes=2, n_clusters_per_class=1, random_state=seed)
     X = preprocessing.normalize(X, axis=1)
 
-    abstract_circuit = flip_flop_state_preparation(X)
+    # Compute the grounf truth density matrix
+    abstract_circuit = state_preparation(X)
 
+    # Get the ansatz circuit
     ansatz = get_ansatz(su2_gates=su2_gates, n_layers=n_layers, num_extending_qubits=num_extending_qubits,
                         abstract_circuit=abstract_circuit)
     init_parameters = np.random.normal(0, 1, ansatz.num_parameters)
@@ -186,67 +254,46 @@ def run_test(n_records, n_features, n_layers, su2_gates, num_extending_qubits, m
     init_wandb(noisy=noisy, n_records=n_records, n_features=n_features, circuit_width=abstract_circuit.num_qubits, n_layers=n_layers, su2_gates=su2_gates, max_epochs=max_epochs, learning_method=learning_method,
                init_parameters=init_parameters, num_parameters=ansatz.num_parameters, num_extending_qubits=num_extending_qubits, optimization_level=optimization_level, seed=seed) if WAND_ENABLED else None
 
+    # train the ansatz
     learned_ansatz, best_parameters, final_infidelity = train_ansatz(init_parameters=init_parameters, abstract_circuit=abstract_circuit.copy(), ansatz=ansatz.copy(), num_extending_qubits=num_extending_qubits,
                                                                      noisy_instance=noisy_instance, fault_tolerant_instance=fault_tolerant_instance, learning_method=learning_method, max_epochs=max_epochs, noisy=noisy)
     wandb.finish() if WAND_ENABLED else None
 
-    # Running fault tolerant instance with original circuit
     density_matrix_fault_tolerant_original, transpiled_original_circuit_fault_tolerant = run_backend(
         abstract_circuit.copy(), fault_tolerant_instance, optimization_level=optimization_level)
 
-    # Running noisy instance with original circuit
     density_matrix_noisy_original, transpiled_original_circuit_noisy = run_backend(
         abstract_circuit.copy(), noisy_instance, optimization_level=optimization_level)
 
-    # Running noisy instance with learned ansatz
     density_matrix_noisy_learned_ansazt, transpiled_learned_ansatz_noisy = run_backend(
         learned_ansatz.copy(), noisy_instance, optimization_level=optimization_level)
 
-    # Running fault_tolerant instance with learned ansatz
     density_matrix_fault_tolerant_learned_ansazt, _ = run_backend(
         learned_ansatz.copy(), fault_tolerant_instance, optimization_level=optimization_level)
 
-    # Compute fidelities
-
-    # NOISY:
     fidelity_fault_tolerant_original_noisy_original = state_fidelity(
         density_matrix_fault_tolerant_original, density_matrix_noisy_original)
-    print('Fidelity Fault Tolerant (original) vs Noisy (original):' +
-          str(fidelity_fault_tolerant_original_noisy_original))
 
     fidelity_fault_tolerant_original_noisy_ansatz = state_fidelity(
         density_matrix_fault_tolerant_original, density_matrix_noisy_learned_ansazt)
-    print('Fidelity Fault Tolerant (original) vs Noisy (ansatz):' +
-          str(fidelity_fault_tolerant_original_noisy_ansatz))
 
     fidelity_noisy_original_noisy_ansatz = state_fidelity(
         density_matrix_noisy_original, density_matrix_noisy_learned_ansazt)
-    print('Fidelity Fault Tolerant (original) vs Noisy (ansatz):' +
-          str(fidelity_noisy_original_noisy_ansatz))
 
-    # NOT NOISY
     fidelity_fault_tolerant_original_fault_tolerant_ansatz = state_fidelity(
         density_matrix_fault_tolerant_original, density_matrix_fault_tolerant_learned_ansazt)
-    print('Fidelity Fault Tolerant (original) vs Fault Tolerant (ansatz):' +
-          str(fidelity_fault_tolerant_original_fault_tolerant_ansatz))
-
 
     depth_abstract, size_abstract, count_ops_abstract, dag_abstract = get_circuit_stats(
         abstract_circuit)
-    print(depth_abstract, size_abstract, count_ops_abstract)
 
     depth_fault_tolerant, size_fault_tolerant, count_ops_fault_tolerant, dag_fault_tolerant = get_circuit_stats(
         transpiled_original_circuit_fault_tolerant)
-    print(depth_fault_tolerant, size_fault_tolerant, count_ops_fault_tolerant)
 
     depth_noisy_original, size_noisy_original, count_ops_noisy_original, dag_noisy_original = get_circuit_stats(
         transpiled_original_circuit_noisy)
-    print(depth_noisy_original, size_noisy_original, count_ops_noisy_original)
 
     depth_noisy_learned_ansatz, size_noisy_learned_ansatz, count_ops_noisy_learned_ansatz, dag_noisy_learned_ansatz = get_circuit_stats(
         transpiled_learned_ansatz_noisy)
-    print(depth_noisy_learned_ansatz, size_noisy_learned_ansatz,
-          count_ops_noisy_learned_ansatz)
 
     df = pd.DataFrame()
     data = {'noisy': noisy,
@@ -263,10 +310,10 @@ def run_test(n_records, n_features, n_layers, su2_gates, num_extending_qubits, m
             'final_infidelity_optimizer': final_infidelity,
             'total_number_of_qubits': abstract_circuit.num_qubits,
             'fidelity_ft_original_noisy_original': fidelity_fault_tolerant_original_noisy_original if noisy else -1,
-            # should be the same of final infidelity
+            # same of final infidelity
             'fidelity_ft_original_noisy_ansatz': fidelity_fault_tolerant_original_noisy_ansatz if noisy else -1,
             'fidelity_noisy_original_noisy_ansatz': fidelity_noisy_original_noisy_ansatz if noisy else -1,
-            # should be the same of final infidelity
+            # same of final infidelity
             'fidelity_ft_original_ft_ansatz': fidelity_fault_tolerant_original_fault_tolerant_ansatz if not noisy else -1,
             'hardware_backend': noisy_instance.backend_name,
             'hardware_basis_gates': noisy_instance.configuration().basis_gates,
@@ -304,7 +351,7 @@ if __name__ == '__main__':
     optimization_level = 0
     max_epochs = 400
 
-    folder = './tests_result'
+    folder = './Results_variational_learning_compressed_qdata/'
 
     fault_tolerant_instance = AerSimulator()
     noisy_instance = Fake20QV1()
@@ -316,18 +363,19 @@ if __name__ == '__main__':
     su2_gates_list = [['ry']]
     num_extending_qubits_list = [0]  # not using
     n_records_list = [2, 4, 8]
+    state_preparations = [flip_flop_state_preparation]
 
     tasks_params = []
-    for noisy in noisy_learning:
-        for learning_method in learning_methods:
-            for seed in seed_list:
-                for n_layers in n_layers_list:
-                    for su2_gates in su2_gates_list:
-                        for num_extending_qubits in num_extending_qubits_list:
-                            for n_records in n_records_list:
-                                for n_features in [2**(i) for i in range(int(np.log2(n_records)))]:
-                                    tasks_params.append([n_records, n_features, n_layers, su2_gates, num_extending_qubits, max_epochs,
-                                                        noisy_instance, fault_tolerant_instance, learning_method, optimization_level, noisy, seed, folder])
-    with Pool(1) as p:
+    for state_preparation in state_preparations:
+        for noisy in noisy_learning:
+            for learning_method in learning_methods:
+                for seed in seed_list:
+                    for n_layers in n_layers_list:
+                        for su2_gates in su2_gates_list:
+                            for num_extending_qubits in num_extending_qubits_list:
+                                for n_records in n_records_list:
+                                    for n_features in [2**(i) for i in range(int(np.log2(n_records)))]:
+                                        tasks_params.append([state_preparation, n_records, n_features, n_layers, su2_gates, num_extending_qubits, max_epochs,
+                                                            noisy_instance, fault_tolerant_instance, learning_method, optimization_level, noisy, seed, folder])
+    with Pool(10) as p:
         p.starmap(run_test, tasks_params)
-
