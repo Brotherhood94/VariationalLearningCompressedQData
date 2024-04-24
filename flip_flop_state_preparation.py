@@ -4,6 +4,15 @@ import numpy as np
 
 
 def flip_flop_state_preparation(X: np.ndarray):
+    """
+    Prepares a quantum circuit for the flip-flop state based on the input data.
+
+    Args:
+        X (np.ndarray): Input data as a numpy array.
+
+    Returns:
+        QuantumCircuit: The prepared quantum circuit for the flip-flop state.
+    """
     n_records, n_features = X.shape
     n_qubits_per_records = int(np.ceil(np.log2(n_records)))
     if n_features > 1:
