@@ -1,4 +1,4 @@
-# Variational Learning of Compressed Error-Mitigated Quantum States of Classical Data
+# Variational Learning of Compressed and Error-Mitigated Quantum States of Classical Data
 
 This repository contains the implementation of the state preparation method described in the article "Variational Learning of Compressed Error-Mitigated Quantum States of Classical Data". It also includes a test suite to assess the reproducibility of the results presented in the corresponding paper.
 
